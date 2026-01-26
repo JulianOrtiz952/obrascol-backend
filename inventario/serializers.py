@@ -1,5 +1,10 @@
 from rest_framework import serializers
-from .models import Bodega, Material, Factura, Movimiento
+from .models import Bodega, Material, Factura, Movimiento, Marca
+
+class MarcaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Marca
+        fields = ['id', 'nombre', 'activo']
 
 class BodegaSerializer(serializers.ModelSerializer):
     materiales_count = serializers.SerializerMethodField()
@@ -29,9 +34,11 @@ class BodegaSerializer(serializers.ModelSerializer):
         return count
 
 class MaterialSerializer(serializers.ModelSerializer):
+    marca_nombre = serializers.ReadOnlyField(source='marca.nombre')
+
     class Meta:
         model = Material
-        fields = ['id', 'codigo', 'codigo_barras', 'referencia', 'nombre', 'unidad']
+        fields = ['id', 'codigo', 'codigo_barras', 'referencia', 'nombre', 'unidad', 'marca', 'ultimo_precio', 'marca_nombre']
 
 class FacturaSerializer(serializers.ModelSerializer):
     class Meta:
@@ -42,13 +49,14 @@ class MovimientoSerializer(serializers.ModelSerializer):
     material_info = MaterialSerializer(source='material', read_only=True)
     bodega_info = BodegaSerializer(source='bodega', read_only=True)
     factura_info = FacturaSerializer(source='factura', read_only=True)
+    marca_info = MarcaSerializer(source='marca', read_only=True)
 
     class Meta:
         model = Movimiento
         fields = [
             'id', 'material', 'material_info', 'bodega', 'bodega_info', 
             'factura', 'factura_info', 'factura_manual', 'cantidad', 'precio', 
-            'fecha', 'tipo', 'observaciones'
+            'fecha', 'tipo', 'observaciones', 'marca', 'marca_info'
         ]
 
     def validate(self, data):

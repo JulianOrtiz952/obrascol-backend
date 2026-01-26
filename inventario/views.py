@@ -1,10 +1,10 @@
 from rest_framework import viewsets, response, status
 from rest_framework.decorators import action
 from django.db.models import Sum
-from .models import Bodega, Material, Factura, Movimiento
+from .models import Bodega, Material, Factura, Movimiento, Marca
 from .serializers import (
     BodegaSerializer, MaterialSerializer, 
-    FacturaSerializer, MovimientoSerializer
+    FacturaSerializer, MovimientoSerializer, MarcaSerializer
 )
 
 class BodegaViewSet(viewsets.ModelViewSet):
@@ -67,6 +67,91 @@ class FacturaViewSet(viewsets.ModelViewSet):
     queryset = Factura.objects.all()
     serializer_class = FacturaSerializer
 
+
+class MarcaViewSet(viewsets.ModelViewSet):
+    queryset = Marca.objects.all()
+    serializer_class = MarcaSerializer
+
+class ReportesViewSet(viewsets.ViewSet):
+    """
+    ViewSet for generating reports and statistics.
+    """
+    
+    @action(detail=False, methods=['get'])
+    def resumen_general(self, request):
+        total_entradas = Movimiento.objects.filter(tipo='Entrada').count()
+        total_salidas = Movimiento.objects.filter(tipo='Salida').count()
+        total_marcas = Marca.objects.filter(activo=True).count()
+        
+        # Calculate total stock value? Maybe later if we have cost.
+        # For now just simple counters
+        
+        return response.Response({
+            'total_entradas': total_entradas,
+            'total_salidas': total_salidas,
+            'total_marcas_activas': total_marcas,
+        })
+
+    @action(detail=False, methods=['get'])
+    def top_marcas_entradas(self, request):
+        return self._get_top_marcas(tipo_movimiento='Entrada')
+
+    @action(detail=False, methods=['get'])
+    def top_marcas_salidas(self, request):
+        # Note: Salidas might not always have marca if not enforced, 
+        # but we'll query what we have.
+        return self._get_top_marcas(tipo_movimiento='Salida')
+
+    def _get_top_marcas(self, tipo_movimiento):
+        from django.db.models import Count, Sum
+        
+        # Aggregate by brand
+        data = (
+            Movimiento.objects
+            .filter(tipo=tipo_movimiento, marca__isnull=False)
+            .values('marca__nombre')
+            .annotate(
+                total_movimientos=Count('id'),
+                total_cantidad=Sum('cantidad')
+            )
+            .order_by('-total_cantidad')[:5]
+        )
+        
+        return response.Response(data)
+
+    @action(detail=False, methods=['get'])
+    def productos_promedio(self, request):
+        """
+        Returns a list of products with their average price based on entries.
+        """
+        from django.db.models import Avg, F
+        
+        # Group by material and calculate average price of 'Entrada' movements
+        data = (
+            Movimiento.objects
+            .filter(tipo='Entrada')
+            .values(
+                'material__id', 
+                'material__codigo', 
+                'material__nombre', 
+                'material__marca__nombre'
+            )
+            .annotate(precio_promedio=Avg('precio'))
+            .order_by('material__nombre')
+        )
+        
+        results = []
+        for item in data:
+            results.append({
+                'id_material': item['material__id'],
+                'codigo': item['material__codigo'],
+                'nombre': item['material__nombre'],
+                'marca': item['material__marca__nombre'] or 'Sin Marca',
+                'precio_promedio': round(item['precio_promedio'], 2) if item['precio_promedio'] else 0
+            })
+            
+        return response.Response(results)
+
 class MovimientoViewSet(viewsets.ModelViewSet):
     queryset = Movimiento.objects.all().order_by('-fecha')
     serializer_class = MovimientoSerializer
@@ -74,13 +159,6 @@ class MovimientoViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def resumen_inventario(self, request):
         # Calculate stock per material and bodega
-        # Stock = Sum of (Entrada, Edicion, Ajuste, Devolucion) - Sum of (Salida)
-        # For simplicity, we can just treat quantities as signed if we want, 
-        # but here we'll handle the logic.
-        
-        # We want a list of {material, bodega, cantidad_total}
-        resumen = []
-        # Optimize: Fetch all movements at once to avoid N*M queries
         qs = Movimiento.objects.select_related('material', 'bodega').all()
         
         inventory = {}
@@ -126,3 +204,30 @@ class MovimientoViewSet(viewsets.ModelViewSet):
             return 'Medio'
         else:
             return 'Bajo'
+
+    def perform_create(self, serializer):
+        movimiento = serializer.save()
+        
+        material = movimiento.material
+        should_save_material = False
+
+        # V2 Logic: Update Material fields on Entry
+        if movimiento.tipo == 'Entrada':
+            # Update last price
+            if movimiento.precio:
+                material.ultimo_precio = movimiento.precio
+                should_save_material = True
+            
+            # Update brand if provided
+            if movimiento.marca:
+                material.marca = movimiento.marca
+                should_save_material = True
+
+        # V2 Logic: For Salida (or others), inherit brand from material if not set
+        elif movimiento.tipo == 'Salida':
+            if not movimiento.marca and material.marca:
+                movimiento.marca = material.marca
+                movimiento.save()
+        
+        if should_save_material:
+            material.save()
