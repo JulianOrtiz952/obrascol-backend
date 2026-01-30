@@ -137,3 +137,5 @@ if not DEBUG:
     STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 CORS_ALLOW_ALL_ORIGINS = True # Change to specific origins for production
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
