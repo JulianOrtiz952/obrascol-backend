@@ -119,38 +119,6 @@ class ReportesViewSet(viewsets.ViewSet):
         
         return response.Response(data)
 
-    @action(detail=False, methods=['get'])
-    def productos_promedio(self, request):
-        """
-        Returns a list of products with their average price based on entries.
-        """
-        from django.db.models import Avg, F
-        
-        # Group by material and calculate average price of 'Entrada' movements
-        data = (
-            Movimiento.objects
-            .filter(tipo='Entrada')
-            .values(
-                'material__id', 
-                'material__codigo', 
-                'material__nombre', 
-                'material__marca__nombre'
-            )
-            .annotate(precio_promedio=Avg('precio'))
-            .order_by('material__nombre')
-        )
-        
-        results = []
-        for item in data:
-            results.append({
-                'id_material': item['material__id'],
-                'codigo': item['material__codigo'],
-                'nombre': item['material__nombre'],
-                'marca': item['material__marca__nombre'] or 'Sin Marca',
-                'precio_promedio': round(item['precio_promedio'], 2) if item['precio_promedio'] else 0
-            })
-            
-        return response.Response(results)
 
 class MovimientoViewSet(viewsets.ModelViewSet):
     queryset = Movimiento.objects.all().order_by('-fecha')
@@ -213,11 +181,6 @@ class MovimientoViewSet(viewsets.ModelViewSet):
 
         # V2 Logic: Update Material fields on Entry
         if movimiento.tipo == 'Entrada':
-            # Update last price
-            if movimiento.precio:
-                material.ultimo_precio = movimiento.precio
-                should_save_material = True
-            
             # Update brand if provided
             if movimiento.marca:
                 material.marca = movimiento.marca
