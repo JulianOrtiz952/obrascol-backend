@@ -1,10 +1,11 @@
 from rest_framework import viewsets, response, status
 from rest_framework.decorators import action
-from django.db.models import Sum
-from .models import Bodega, Material, Factura, Movimiento, Marca
+from django.db.models import Sum, Q
+from .models import Bodega, Material, Factura, Movimiento, Marca, UnidadMedida
 from .serializers import (
     BodegaSerializer, MaterialSerializer, 
-    FacturaSerializer, MovimientoSerializer, MarcaSerializer
+    FacturaSerializer, MovimientoSerializer, MarcaSerializer,
+    UnidadMedidaSerializer
 )
 
 class BodegaViewSet(viewsets.ModelViewSet):
@@ -34,20 +35,30 @@ class BodegaViewSet(viewsets.ModelViewSet):
     def stock_actual(self, request, pk=None):
         bodega = self.get_object()
         resumen = []
-        # Optimize: Only get materials that have movements in this bodega
-        material_ids = Movimiento.objects.filter(bodega=bodega).values_list('material', flat=True).distinct()
+        # Optimize: Only get materials that have movements in this bodega (as source or destination)
+        material_ids = Movimiento.objects.filter(
+            Q(bodega=bodega) | Q(bodega_destino=bodega)
+        ).values_list('material', flat=True).distinct()
         materiales = Material.objects.filter(id__in=material_ids)
 
         for mat in materiales:
-            qs = Movimiento.objects.filter(material=mat, bodega=bodega)
+            qs = Movimiento.objects.filter(material=mat).filter(
+                Q(bodega=bodega) | Q(bodega_destino=bodega)
+            )
             if qs.exists():
                 total = 0
                 for mov in qs:
                     if mov.tipo in ['Entrada', 'Edicion', 'Ajuste', 'Devolucion']:
-                        total += mov.cantidad
+                        if mov.bodega_id == bodega.id:
+                            total += mov.cantidad
                     elif mov.tipo == 'Salida':
-                        total -= mov.cantidad
-                
+                        if mov.bodega_id == bodega.id:
+                            total -= mov.cantidad
+                    elif mov.tipo == 'Traslado':
+                        if mov.bodega_id == bodega.id:
+                            total -= mov.cantidad
+                        if mov.bodega_destino_id == bodega.id:
+                            total += mov.cantidad
                 if total > 0:
                     resumen.append({
                         'id_material': mat.id,
@@ -71,6 +82,10 @@ class FacturaViewSet(viewsets.ModelViewSet):
 class MarcaViewSet(viewsets.ModelViewSet):
     queryset = Marca.objects.all()
     serializer_class = MarcaSerializer
+
+class UnidadMedidaViewSet(viewsets.ModelViewSet):
+    queryset = UnidadMedida.objects.all()
+    serializer_class = UnidadMedidaSerializer
 
 class ReportesViewSet(viewsets.ViewSet):
     """
@@ -144,6 +159,18 @@ class MovimientoViewSet(viewsets.ModelViewSet):
                 inventory[key]['cantidad'] += mov.cantidad
             elif mov.tipo == 'Salida':
                 inventory[key]['cantidad'] -= mov.cantidad
+            elif mov.tipo == 'Traslado':
+                # Subtract from source
+                inventory[key]['cantidad'] -= mov.cantidad
+                # Add to destination
+                dest_key = (mov.material.id, mov.bodega_destino.id)
+                if dest_key not in inventory:
+                    inventory[dest_key] = {
+                        'material': mov.material,
+                        'bodega': mov.bodega_destino,
+                        'cantidad': 0
+                    }
+                inventory[dest_key]['cantidad'] += mov.cantidad
         
         resumen = []
         for (mat_id, bod_id), data in inventory.items():
@@ -174,7 +201,7 @@ class MovimientoViewSet(viewsets.ModelViewSet):
             return 'Bajo'
 
     def perform_create(self, serializer):
-        movimiento = serializer.save()
+        movimiento = serializer.save(usuario=self.request.user)
         
         material = movimiento.material
         should_save_material = False
