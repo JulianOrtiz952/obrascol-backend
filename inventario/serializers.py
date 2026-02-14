@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.db.models import Q, Sum
-from .models import Bodega, Material, Factura, Movimiento, Marca, UnidadMedida
+from .models import Bodega, Subbodega, Material, Factura, Movimiento, Marca, UnidadMedida
 from usuarios.serializers import UsuarioSerializer
 
 class MarcaSerializer(serializers.ModelSerializer):
@@ -13,12 +13,18 @@ class UnidadMedidaSerializer(serializers.ModelSerializer):
         model = UnidadMedida
         fields = ['id', 'nombre', 'abreviacion', 'activo']
 
+class SubbodegaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Subbodega
+        fields = ['id', 'nombre', 'bodega', 'activo']
+
 class BodegaSerializer(serializers.ModelSerializer):
     materiales_count = serializers.SerializerMethodField()
+    subbodegas = SubbodegaSerializer(many=True, read_only=True)
     
     class Meta:
         model = Bodega
-        fields = ['id', 'nombre', 'ubicacion', 'activo', 'materiales_count']
+        fields = ['id', 'nombre', 'ubicacion', 'activo', 'materiales_count', 'subbodegas']
     
     def get_materiales_count(self, obj):
         # Count unique materials with stock > 0 in this bodega
@@ -64,16 +70,20 @@ class FacturaSerializer(serializers.ModelSerializer):
 class MovimientoSerializer(serializers.ModelSerializer):
     material_info = MaterialSerializer(source='material', read_only=True)
     bodega_info = BodegaSerializer(source='bodega', read_only=True)
+    subbodega_info = SubbodegaSerializer(source='subbodega', read_only=True)
     factura_info = FacturaSerializer(source='factura', read_only=True)
     marca_info = MarcaSerializer(source='marca', read_only=True)
     bodega_destino_info = BodegaSerializer(source='bodega_destino', read_only=True)
+    subbodega_destino_info = SubbodegaSerializer(source='subbodega_destino', read_only=True)
     usuario_info = UsuarioSerializer(source='usuario', read_only=True)
 
     class Meta:
         model = Movimiento
         fields = [
             'id', 'material', 'material_info', 'bodega', 'bodega_info', 
+            'subbodega', 'subbodega_info',
             'bodega_destino', 'bodega_destino_info',
+            'subbodega_destino', 'subbodega_destino_info',
             'factura', 'factura_info', 'factura_manual', 'cantidad', 'precio', 
             'fecha', 'tipo', 'observaciones', 'marca', 'marca_info',
             'usuario', 'usuario_info'
@@ -84,17 +94,21 @@ class MovimientoSerializer(serializers.ModelSerializer):
         if tipo in ['Salida', 'Traslado']:
             material = data.get('material', self.instance.material if self.instance else None)
             bodega_origen = data.get('bodega', self.instance.bodega if self.instance else None)
+            subbodega_origen = data.get('subbodega', self.instance.subbodega if self.instance else None)
             cantidad_solicitada = data.get('cantidad', self.instance.cantidad if self.instance else 0)
 
             if tipo == 'Traslado':
                 bodega_destino = data.get('bodega_destino')
+                subbodega_destino = data.get('subbodega_destino')
                 if not bodega_destino:
                     raise serializers.ValidationError({"bodega_destino": "Debe seleccionar una bodega de destino para un traslado."})
-                if bodega_origen == bodega_destino:
-                    raise serializers.ValidationError({"bodega_destino": "La bodega de destino no puede ser la misma que la de origen."})
+                if bodega_origen == bodega_destino and subbodega_origen == subbodega_destino:
+                    raise serializers.ValidationError({"subbodega_destino": "La ubicación de destino no puede ser la misma que la de origen."})
 
+            # Calculate stock in specific subbodega
             movimientos = Movimiento.objects.filter(material=material).filter(
-                Q(bodega=bodega_origen) | Q(bodega_destino=bodega_origen)
+                Q(bodega=bodega_origen, subbodega=subbodega_origen) | 
+                Q(bodega_destino=bodega_origen, subbodega_destino=subbodega_origen)
             )
             
             stock_actual = 0
@@ -103,19 +117,20 @@ class MovimientoSerializer(serializers.ModelSerializer):
                     continue
                 
                 if mov.tipo in ['Entrada', 'Edicion', 'Ajuste', 'Devolucion']:
-                    if mov.bodega_id == bodega_origen.id:
+                    if mov.bodega_id == bodega_origen.id and mov.subbodega_id == (subbodega_origen.id if subbodega_origen else None):
                         stock_actual += mov.cantidad
                 elif mov.tipo == 'Salida':
-                    if mov.bodega_id == bodega_origen.id:
+                    if mov.bodega_id == bodega_origen.id and mov.subbodega_id == (subbodega_origen.id if subbodega_origen else None):
                         stock_actual -= mov.cantidad
                 elif mov.tipo == 'Traslado':
-                    if mov.bodega_id == bodega_origen.id:
+                    if mov.bodega_id == bodega_origen.id and mov.subbodega_id == (subbodega_origen.id if subbodega_origen else None):
                         stock_actual -= mov.cantidad
-                    if mov.bodega_destino_id == bodega_origen.id:
+                    if mov.bodega_destino_id == bodega_origen.id and mov.subbodega_destino_id == (subbodega_origen.id if subbodega_origen else None):
                         stock_actual += mov.cantidad
             
             if cantidad_solicitada > stock_actual:
+                loc_name = subbodega_origen.nombre if subbodega_origen else "General"
                 raise serializers.ValidationError(
-                    f"Stock insuficiente en la bodega de origen. Disponible: {stock_actual} {material.unidad}."
+                    f"Stock insuficiente en {bodega_origen.nombre} ({loc_name}). Disponible: {stock_actual} {material.unidad}."
                 )
         return data

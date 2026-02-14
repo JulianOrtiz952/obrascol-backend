@@ -10,6 +10,14 @@ class Bodega(models.Model):
     def __str__(self):
         return self.nombre
 
+class Subbodega(models.Model):
+    nombre = models.CharField(max_length=100)
+    bodega = models.ForeignKey(Bodega, on_delete=models.CASCADE, related_name='subbodegas')
+    activo = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.bodega.nombre} - {self.nombre}"
+
 class Material(models.Model):
     codigo = models.CharField(max_length=50, unique=True)
     codigo_barras = models.CharField(max_length=100, unique=True, blank=True, null=True)
@@ -58,7 +66,9 @@ class Movimiento(models.Model):
     
     material = models.ForeignKey(Material, on_delete=models.CASCADE, related_name='movimientos')
     bodega = models.ForeignKey(Bodega, on_delete=models.CASCADE, related_name='movimientos')
+    subbodega = models.ForeignKey(Subbodega, on_delete=models.SET_NULL, null=True, blank=True, related_name='movimientos')
     bodega_destino = models.ForeignKey(Bodega, on_delete=models.SET_NULL, null=True, blank=True, related_name='traslados_recibidos')
+    subbodega_destino = models.ForeignKey(Subbodega, on_delete=models.SET_NULL, null=True, blank=True, related_name='traslados_recibidos')
     marca = models.ForeignKey(Marca, on_delete=models.SET_NULL, null=True, blank=True, related_name='movimientos')
     factura = models.ForeignKey(Factura, on_delete=models.SET_NULL, null=True, blank=True, related_name='movimientos')
     factura_manual = models.CharField(max_length=100, blank=True, null=True)
