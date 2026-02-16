@@ -130,28 +130,31 @@ def populate():
     print(f"Creados {len(catalogo)} materiales en el catálogo.")
 
     # 7. Generar 300 Movimientos de Entrada
-    print("Registrando 300 entradas de stock...")
-    for i in range(300):
-        mat = random.choice(catalogo)
-        sub = random.choice(subbodegas_pool)
-        user = random.choice(usuarios)
-        
-        # Fecha aleatoria en los últimos 30 días
-        fecha = timezone.now() - timedelta(days=random.randint(0, 30), hours=random.randint(0, 23))
-        
-        Movimiento.objects.create(
-            material=mat,
-            bodega=sub.bodega,
-            subbodega=sub,
-            usuario=user,
-            cantidad=random.randint(1, 100),
-            precio=mat.ultimo_precio,
-            tipo='Entrada',
-            fecha=fecha,
-            observaciones=f"Carga inicial de datos de prueba #{i+1}"
-        )
-        if (i+1) % 50 == 0:
-            print(f"  -> {i+1} movimientos registrados...")
+    if Movimiento.objects.count() == 0:
+        print("Registrando 300 entradas de stock...")
+        for i in range(300):
+            mat = random.choice(catalogo)
+            sub = random.choice(subbodegas_pool)
+            user = random.choice(usuarios)
+            
+            # Fecha aleatoria en los últimos 30 días
+            fecha = timezone.now() - timedelta(days=random.randint(0, 30), hours=random.randint(0, 23))
+            
+            Movimiento.objects.create(
+                material=mat,
+                bodega=sub.bodega,
+                subbodega=sub,
+                usuario=user,
+                cantidad=random.randint(1, 100),
+                precio=mat.ultimo_precio,
+                tipo='Entrada',
+                fecha=fecha,
+                observaciones=f"Carga inicial de datos de prueba #{i+1}"
+            )
+            if (i+1) % 50 == 0:
+                print(f"  -> {i+1} movimientos registrados...")
+    else:
+        print("Omitiendo creación de movimientos: Ya existen registros en la base de datos.")
 
     print("\n¡Poblamiento completado con éxito!")
     print(f"Total Bodegas: {Bodega.objects.count()}")
