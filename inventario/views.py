@@ -39,16 +39,14 @@ class BodegaViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def stock_actual(self, request, pk=None):
         bodega = self.get_object()
-        resumen = []
         
         # Filter by subbodega if provided (support recursive child stock)
         target_sub_id = request.query_params.get('subbodega')
-        allowed_sub_ids = None # None means all subbodegas of this bodega
+        allowed_sub_ids = None 
         
         if target_sub_id:
             try:
                 target_sub = Subbodega.objects.get(id=target_sub_id, bodega=bodega)
-                # Recursive search for all children
                 def get_descendants(sub):
                     ids = [sub.id]
                     for child in sub.children.all():
@@ -58,69 +56,68 @@ class BodegaViewSet(viewsets.ModelViewSet):
             except Subbodega.DoesNotExist:
                 return response.Response({"error": "Subbodega no encontrada"}, status=404)
 
-        # Get all subbodegas for this bodega (limited if filtered)
-        # We select_related parent up to a few levels to speed up get_full_path
-        subbodegas_qs = bodega.subbodegas.select_related('parent', 'parent__parent', 'parent__parent__parent', 'parent__parent__parent__parent')
-        if allowed_sub_ids is not None:
-             subbodegas_qs = subbodegas_qs.filter(id__in=allowed_sub_ids)
+        # 1. SQL Aggregation for Stock
+        from django.db.models import Sum, F, Case, When, Value
         
-        subbodegas = list(subbodegas_qs)
-        inventory = {}
+        filters = Q(bodega=bodega) | Q(bodega_destino=bodega)
+        if allowed_sub_ids is not None:
+            filters &= (Q(subbodega_id__in=allowed_sub_ids) | Q(subbodega_destino_id__in=allowed_sub_ids))
 
-        # Movements where this bodega is source or destination
-        movimientos = Movimiento.objects.filter(
-            Q(bodega=bodega) | Q(bodega_destino=bodega)
-        ).select_related('material', 'subbodega', 'subbodega_destino')
-        
-        if allowed_sub_ids is not None:
-            movimientos = movimientos.filter(
-                Q(subbodega_id__in=allowed_sub_ids) | Q(subbodega_destino_id__in=allowed_sub_ids)
+        # We aggregate in two parts: as source and as destination
+        # Then we combine in Python. This is MUCH faster than iterating over all movements.
+        sources = Movimiento.objects.filter(bodega=bodega).values('material', 'subbodega').annotate(
+            qty=Sum(
+                Case(
+                    When(tipo__in=['Entrada', 'Edicion', 'Ajuste', 'Devolucion'], then=F('cantidad')),
+                    When(tipo__in=['Salida', 'Traslado'], then=-F('cantidad')),
+                    default=Value(0)
+                )
             )
+        )
+        
+        destinations = Movimiento.objects.filter(bodega_destino=bodega).values('material', 'subbodega_destino').annotate(
+            qty=Sum(
+                Case(
+                    When(tipo='Traslado', then=F('cantidad')),
+                    default=Value(0)
+                )
+            )
+        )
 
-        for mov in movimientos:
-            # Handle source
-            if mov.bodega_id == bodega.id:
-                sub_id = mov.subbodega_id
-                if allowed_sub_ids is not None and sub_id not in allowed_sub_ids:
-                    pass # Handled by the filter above but being safe
-                else:
-                    key = (mov.material_id, sub_id)
-                    if key not in inventory:
-                        inventory[key] = {'material': mov.material, 'sub_id': sub_id, 'cantidad': 0}
-                    
-                    if mov.tipo in ['Entrada', 'Edicion', 'Ajuste', 'Devolucion']:
-                        inventory[key]['cantidad'] += mov.cantidad
-                    elif mov.tipo in ['Salida', 'Traslado']:
-                        inventory[key]['cantidad'] -= mov.cantidad
-            
-            # Handle destination
-            if mov.bodega_destino_id == bodega.id:
-                sub_dest_id = mov.subbodega_destino_id
-                if allowed_sub_ids is not None and sub_dest_id not in allowed_sub_ids:
-                    pass
-                else:
-                    key_dest = (mov.material_id, sub_dest_id)
-                    if key_dest not in inventory:
-                        inventory[key_dest] = {'material': mov.material, 'sub_id': sub_dest_id, 'cantidad': 0}
-                    
-                    if mov.tipo == 'Traslado':
-                        inventory[key_dest]['cantidad'] += mov.cantidad
+        if allowed_sub_ids is not None:
+            sources = sources.filter(subbodega_id__in=allowed_sub_ids)
+            destinations = destinations.filter(subbodega_destino_id__in=allowed_sub_ids)
 
-        # Map subbodega IDs to objects for easy access
-        sub_map = {sb.id: sb for sb in subbodegas}
+        inventory = {}
+        for s in sources:
+            key = (s['material'], s['subbodega'])
+            inventory[key] = s['qty'] or 0
+        
+        for d in destinations:
+            key = (d['material'], d['subbodega_destino'])
+            inventory[key] = inventory.get(key, 0) + (d['qty'] or 0)
 
-        for (mat_id, sub_id), data in inventory.items():
-            if data['cantidad'] != 0:
-                mat = data['material']
-                qty = data['cantidad']
-                sub_obj = sub_map.get(sub_id)
+        # 2. Fetch required Objects in bulk to avoid N+1
+        material_ids = {k[0] for k in inventory.keys()}
+        sub_ids = {k[1] for k in inventory.keys() if k[1] is not None}
+        
+        materials = {m.id: m for m in Material.objects.filter(id__in=material_ids)}
+        # Optimized full path fetching
+        subs_qs = Subbodega.objects.filter(id__in=sub_ids).select_related('parent', 'parent__parent', 'parent__parent__parent')
+        subs = {s.id: s for s in subs_qs}
+
+        resumen = []
+        for (mat_id, sub_id), qty in inventory.items():
+            if qty != 0:
+                mat = materials.get(mat_id)
+                sub_obj = subs.get(sub_id)
                 resumen.append({
-                    'id_material': mat.id,
-                    'codigo': mat.codigo,
-                    'referencia': mat.referencia,
-                    'nombre': mat.nombre,
+                    'id_material': mat_id,
+                    'codigo': mat.codigo if mat else "",
+                    'referencia': mat.referencia if mat else "",
+                    'nombre': mat.nombre if mat else "Desconocido",
                     'cantidad': qty,
-                    'unidad': mat.unidad,
+                    'unidad': mat.unidad if mat else "",
                     'id_subbodega': sub_id,
                     'subbodega_nombre': sub_obj.get_full_path() if sub_obj else "General"
                 })
@@ -232,61 +229,59 @@ class MovimientoViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def resumen_inventario(self, request):
-        # Calculate stock per material, bodega and subbodega
-        qs = Movimiento.objects.select_related(
-            'material', 'material__marca', 'bodega', 'subbodega', 
-            'bodega_destino', 'subbodega_destino'
-        ).all()
+        # 1. SQL Aggregation (Grouping by Material, Bodega, Subbodega)
+        from django.db.models import Sum, Case, When, F, Value
         
+        # We need to handle movements as source and as destination separately because of Traslados
+        sources = Movimiento.objects.values('material', 'bodega', 'subbodega').annotate(
+            q=Sum(
+                Case(
+                    When(tipo__in=['Entrada', 'Edicion', 'Ajuste', 'Devolucion'], then=F('cantidad')),
+                    When(tipo__in=['Salida', 'Traslado'], then=-F('cantidad')),
+                    default=Value(0)
+                )
+            )
+        )
+        
+        destinations = Movimiento.objects.filter(tipo='Traslado').values('material', 'bodega_destino', 'subbodega_destino').annotate(
+            q=Sum('cantidad')
+        )
+
         inventory = {}
+        for s in sources:
+            key = (s['material'], s['bodega'], s['subbodega'])
+            inventory[key] = s['q'] or 0
         
-        for mov in qs:
-            # Source key: (material, bodega, subbodega)
-            key = (mov.material_id, mov.bodega_id, mov.subbodega_id)
-            if key not in inventory:
-                inventory[key] = {
-                    'material': mov.material,
-                    'bodega': mov.bodega,
-                    'subbodega': mov.subbodega,
-                    'cantidad': 0
-                }
-            
-            if mov.tipo in ['Entrada', 'Edicion', 'Ajuste', 'Devolucion']:
-                inventory[key]['cantidad'] += mov.cantidad
-            elif mov.tipo == 'Salida':
-                inventory[key]['cantidad'] -= mov.cantidad
-            elif mov.tipo == 'Traslado':
-                # Subtract from source
-                inventory[key]['cantidad'] -= mov.cantidad
-                # Add to destination
-                dest_key = (mov.material_id, mov.bodega_destino_id, mov.subbodega_destino_id)
-                if dest_key not in inventory:
-                    inventory[dest_key] = {
-                        'material': mov.material,
-                        'bodega': mov.bodega_destino,
-                        'subbodega': mov.subbodega_destino,
-                        'cantidad': 0
-                    }
-                inventory[dest_key]['cantidad'] += mov.cantidad
-        
+        for d in destinations:
+            key = (d['material'], d['bodega_destino'], d['subbodega_destino'])
+            inventory[key] = inventory.get(key, 0) + (d['q'] or 0)
+
+        # 2. Bulk fetch Meta information
+        material_ids = {k[0] for k in inventory.keys()}
+        bodega_ids = {k[1] for k in inventory.keys()}
+        sub_ids = {k[2] for k in inventory.keys() if k[2] is not None}
+
+        materials = {m.id: m for m in Material.objects.filter(id__in=material_ids)}
+        bodegas_map = {b.id: b for b in Bodega.objects.filter(id__in=bodega_ids)}
+        subs = {s.id: s for s in Subbodega.objects.filter(id__in=sub_ids).select_related('parent', 'parent__parent', 'parent__parent__parent')}
+
         resumen = []
-        for (mat_id, bod_id, sub_id), data in inventory.items():
-            if data['cantidad'] != 0:
-                mat = data['material']
-                bod = data['bodega']
-                sub = data['subbodega']
-                qty = data['cantidad']
+        for (mat_id, bod_id, sub_id), qty in inventory.items():
+            if qty != 0:
+                mat = materials.get(mat_id)
+                bod = bodegas_map.get(bod_id)
+                sub = subs.get(sub_id)
                 resumen.append({
-                    'id_material': mat.id,
-                    'codigo': mat.codigo,
-                    'referencia': mat.referencia,
-                    'nombre': mat.nombre,
-                    'id_bodega': bod.id,
-                    'bodega': bod.nombre,
-                    'id_subbodega': sub.id if sub else None,
+                    'id_material': mat_id,
+                    'codigo': mat.codigo if mat else "",
+                    'referencia': mat.referencia if mat else "",
+                    'nombre': mat.nombre if mat else "Desconocido",
+                    'id_bodega': bod_id,
+                    'bodega': bod.nombre if bod else "Desconocida",
+                    'id_subbodega': sub_id,
                     'subbodega': sub.get_full_path() if sub else "General",
                     'cantidad': qty,
-                    'unidad': mat.unidad,
+                    'unidad': mat.unidad if mat else "",
                     'estado': self._get_estado(qty)
                 })
         
