@@ -34,7 +34,14 @@ def populate():
     ]
     unidades = []
     for nombre, abrev in unidades_data:
-        u, _ = UnidadMedida.objects.get_or_create(nombre=nombre, abreviacion=abrev)
+        # Check by abbreviation first as it's the more common identifier
+        u = UnidadMedida.objects.filter(abreviacion=abrev).first()
+        if not u:
+            # Check by name just in case
+            u = UnidadMedida.objects.filter(nombre=nombre).first()
+        
+        if not u:
+            u = UnidadMedida.objects.create(nombre=nombre, abreviacion=abrev)
         unidades.append(u)
     print(f"Creadas {len(unidades)} unidades de medida.")
 
@@ -42,7 +49,9 @@ def populate():
     marcas_nombres = ['Sika', 'Argos', 'Pavinco', 'Gerfor', 'Hilti', 'DeWalt', 'Makita', 'Bosch', '3M', 'Generico']
     marcas = []
     for nombre in marcas_nombres:
-        m, _ = Marca.objects.get_or_create(nombre=nombre)
+        m = Marca.objects.filter(nombre=nombre).first()
+        if not m:
+            m = Marca.objects.create(nombre=nombre)
         marcas.append(m)
     print(f"Creadas {len(marcas)} marcas.")
 
@@ -51,16 +60,15 @@ def populate():
     roles = ['operario', 'administrativo', 'superusuario']
     for i in range(1, 6):
         username = f'usuario{i}'
-        user, created = Usuario.objects.get_or_create(
-            username=username,
-            defaults={
-                'email': f'{username}@obrascol.com',
-                'rol': random.choice(roles),
-                'first_name': f'Usuario {i}',
-                'last_name': 'Prueba'
-            }
-        )
-        if created:
+        user = Usuario.objects.filter(username=username).first()
+        if not user:
+            user = Usuario.objects.create(
+                username=username,
+                email=f'{username}@obrascol.com',
+                rol=random.choice(roles),
+                first_name=f'Usuario {i}',
+                last_name='Prueba'
+            )
             user.set_password('volcan2026')
             user.save()
         usuarios.append(user)
@@ -70,7 +78,9 @@ def populate():
     bodegas_nombres = ['POLVORIN', 'COCINA', 'TALLER']
     bodegas = {}
     for nombre in bodegas_nombres:
-        b, _ = Bodega.objects.get_or_create(nombre=nombre, defaults={'ubicacion': 'Sede Principal'})
+        b = Bodega.objects.filter(nombre=nombre).first()
+        if not b:
+            b = Bodega.objects.create(nombre=nombre, ubicacion='Sede Principal')
         bodegas[nombre] = b
     print(f"Creadas {len(bodegas)} bodegas principales.")
 
@@ -86,25 +96,32 @@ def populate():
     for num in numeros:
         for letra in letras:
             estante_nombre = f"ESTANTE {num}{letra}"
-            estante, _ = Subbodega.objects.get_or_create(
-                nombre=estante_nombre,
-                bodega=polvorin,
-                parent=None
-            )
+            estante = Subbodega.objects.filter(nombre=estante_nombre, bodega=polvorin, parent=None).first()
+            if not estante:
+                estante = Subbodega.objects.create(
+                    nombre=estante_nombre,
+                    bodega=polvorin,
+                    parent=None
+                )
             
             # Crear 5 Filas por cada Estante
             for f in range(1, 6):
                 fila_nombre = f"FILA {f}"
-                fila, _ = Subbodega.objects.get_or_create(
-                    nombre=fila_nombre,
-                    bodega=polvorin,
-                    parent=estante
-                )
+                fila = Subbodega.objects.filter(nombre=fila_nombre, bodega=polvorin, parent=estante).first()
+                if not fila:
+                    fila = Subbodega.objects.create(
+                        nombre=fila_nombre,
+                        bodega=polvorin,
+                        parent=estante
+                    )
                 subbodegas_pool.append(fila)
 
     # Añadir subbodegas simples para Cocina y Taller
     for b_name in ['COCINA', 'TALLER']:
-        general, _ = Subbodega.objects.get_or_create(nombre='GENERAL', bodega=bodegas[b_name])
+        b = bodegas[b_name]
+        general = Subbodega.objects.filter(nombre='GENERAL', bodega=b).first()
+        if not general:
+            general = Subbodega.objects.create(nombre='GENERAL', bodega=b)
         subbodegas_pool.append(general)
 
     # 6. Crear Materiales (Catálogo)
@@ -122,15 +139,15 @@ def populate():
     ]
     catalogo = []
     for cod, nom, marc_nom, uni_abrev in materiales_data:
-        m, _ = Material.objects.get_or_create(
-            codigo=cod,
-            defaults={
-                'nombre': nom,
-                'marca': Marca.objects.get(nombre=marc_nom),
-                'unidad': uni_abrev,
-                'ultimo_precio': random.randint(5000, 500000)
-            }
-        )
+        m = Material.objects.filter(codigo=cod).first()
+        if not m:
+            m = Material.objects.create(
+                codigo=cod,
+                nombre=nom,
+                marca=Marca.objects.get(nombre=marc_nom),
+                unidad=uni_abrev,
+                ultimo_precio=random.randint(5000, 500000)
+            )
         catalogo.append(m)
     print(f"Creados {len(catalogo)} materiales en el catálogo.")
 
