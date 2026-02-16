@@ -3,9 +3,9 @@ from rest_framework.decorators import action
 from django.db.models import Sum, Q
 from .models import Bodega, Subbodega, Material, Factura, Movimiento, Marca, UnidadMedida
 from .serializers import (
-    BodegaSerializer, SubbodegaSerializer, MaterialSerializer, 
-    FacturaSerializer, MovimientoSerializer, MarcaSerializer,
-    UnidadMedidaSerializer
+    BodegaSerializer, BodegaSimpleSerializer, SubbodegaSerializer, 
+    MaterialSerializer, FacturaSerializer, MovimientoSerializer, 
+    MarcaSerializer, UnidadMedidaSerializer
 )
 
 class BodegaViewSet(viewsets.ModelViewSet):

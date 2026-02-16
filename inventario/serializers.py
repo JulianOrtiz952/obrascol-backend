@@ -80,11 +80,11 @@ class FacturaSerializer(serializers.ModelSerializer):
 
 class MovimientoSerializer(serializers.ModelSerializer):
     material_info = MaterialSerializer(source='material', read_only=True)
-    bodega_info = BodegaSerializer(source='bodega', read_only=True)
+    bodega_info = BodegaSimpleSerializer(source='bodega', read_only=True)
     subbodega_info = SubbodegaSerializer(source='subbodega', read_only=True)
     factura_info = FacturaSerializer(source='factura', read_only=True)
     marca_info = MarcaSerializer(source='marca', read_only=True)
-    bodega_destino_info = BodegaSerializer(source='bodega_destino', read_only=True)
+    bodega_destino_info = BodegaSimpleSerializer(source='bodega_destino', read_only=True)
     subbodega_destino_info = SubbodegaSerializer(source='subbodega_destino', read_only=True)
     usuario_info = UsuarioSerializer(source='usuario', read_only=True)
 
