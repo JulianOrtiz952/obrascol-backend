@@ -8,10 +8,15 @@ from datetime import timedelta
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 django.setup()
 
+from django.conf import settings
 from inventario.models import Bodega, Subbodega, Material, Marca, UnidadMedida, Movimiento
 from usuarios.models import Usuario
 
 def populate():
+    print("=== DEBUG OBRASCOL POPULATE ===")
+    print(f"Target Database: {settings.DATABASES['default'].get('NAME', 'Unknown')}")
+    print(f"Host: {settings.DATABASES['default'].get('HOST', 'localhost')}")
+    print("===============================")
     print("Iniciando poblamiento de base de datos...")
 
     # 1. Crear Unidades de Medida
