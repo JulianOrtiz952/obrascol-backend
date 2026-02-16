@@ -14,9 +14,11 @@ class UnidadMedidaSerializer(serializers.ModelSerializer):
         fields = ['id', 'nombre', 'abreviacion', 'activo']
 
 class SubbodegaSerializer(serializers.ModelSerializer):
+    full_path = serializers.ReadOnlyField(source='get_full_path')
+    
     class Meta:
         model = Subbodega
-        fields = ['id', 'nombre', 'bodega', 'activo']
+        fields = ['id', 'nombre', 'full_path', 'bodega', 'parent', 'activo']
 
 class BodegaSerializer(serializers.ModelSerializer):
     materiales_count = serializers.SerializerMethodField()

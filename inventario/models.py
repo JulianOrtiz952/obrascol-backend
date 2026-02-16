@@ -13,10 +13,16 @@ class Bodega(models.Model):
 class Subbodega(models.Model):
     nombre = models.CharField(max_length=100)
     bodega = models.ForeignKey(Bodega, on_delete=models.CASCADE, related_name='subbodegas')
+    parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='children')
     activo = models.BooleanField(default=True)
 
+    def get_full_path(self):
+        if self.parent:
+            return f"{self.parent.get_full_path()} > {self.nombre}"
+        return self.nombre
+
     def __str__(self):
-        return f"{self.bodega.nombre} - {self.nombre}"
+        return f"{self.bodega.nombre} - {self.get_full_path()}"
 
 class Material(models.Model):
     codigo = models.CharField(max_length=50, unique=True)

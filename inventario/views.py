@@ -36,38 +36,69 @@ class BodegaViewSet(viewsets.ModelViewSet):
         bodega = self.get_object()
         resumen = []
         
-        # Get all subbodegas for this bodega
-        subbodegas = list(bodega.subbodegas.all())
-        # Dict to store stock: (material_id, subbodega_id) -> total
+        # Filter by subbodega if provided (support recursive child stock)
+        target_sub_id = request.query_params.get('subbodega')
+        allowed_sub_ids = None # None means all subbodegas of this bodega
+        
+        if target_sub_id:
+            try:
+                target_sub = Subbodega.objects.get(id=target_sub_id, bodega=bodega)
+                # Recursive search for all children
+                def get_descendants(sub):
+                    ids = [sub.id]
+                    for child in sub.children.all():
+                        ids.extend(get_descendants(child))
+                    return ids
+                allowed_sub_ids = get_descendants(target_sub)
+            except Subbodega.DoesNotExist:
+                return response.Response({"error": "Subbodega no encontrada"}, status=404)
+
+        # Get all subbodegas for this bodega (limited if filtered)
+        subbodegas_qs = bodega.subbodegas.all()
+        if allowed_sub_ids is not None:
+             subbodegas_qs = subbodegas_qs.filter(id__in=allowed_sub_ids)
+        
+        subbodegas = list(subbodegas_qs)
         inventory = {}
 
         # Movements where this bodega is source or destination
         movimientos = Movimiento.objects.filter(
             Q(bodega=bodega) | Q(bodega_destino=bodega)
         ).select_related('material', 'subbodega', 'subbodega_destino')
+        
+        if allowed_sub_ids is not None:
+            movimientos = movimientos.filter(
+                Q(subbodega_id__in=allowed_sub_ids) | Q(subbodega_destino_id__in=allowed_sub_ids)
+            )
 
         for mov in movimientos:
             # Handle source
             if mov.bodega_id == bodega.id:
                 sub_id = mov.subbodega_id
-                key = (mov.material_id, sub_id)
-                if key not in inventory:
-                    inventory[key] = {'material': mov.material, 'sub_id': sub_id, 'cantidad': 0}
-                
-                if mov.tipo in ['Entrada', 'Edicion', 'Ajuste', 'Devolucion']:
-                    inventory[key]['cantidad'] += mov.cantidad
-                elif mov.tipo in ['Salida', 'Traslado']:
-                    inventory[key]['cantidad'] -= mov.cantidad
+                if allowed_sub_ids is not None and sub_id not in allowed_sub_ids:
+                    pass # Handled by the filter above but being safe
+                else:
+                    key = (mov.material_id, sub_id)
+                    if key not in inventory:
+                        inventory[key] = {'material': mov.material, 'sub_id': sub_id, 'cantidad': 0}
+                    
+                    if mov.tipo in ['Entrada', 'Edicion', 'Ajuste', 'Devolucion']:
+                        inventory[key]['cantidad'] += mov.cantidad
+                    elif mov.tipo in ['Salida', 'Traslado']:
+                        inventory[key]['cantidad'] -= mov.cantidad
             
             # Handle destination
             if mov.bodega_destino_id == bodega.id:
                 sub_dest_id = mov.subbodega_destino_id
-                key_dest = (mov.material_id, sub_dest_id)
-                if key_dest not in inventory:
-                    inventory[key_dest] = {'material': mov.material, 'sub_id': sub_dest_id, 'cantidad': 0}
-                
-                if mov.tipo == 'Traslado':
-                    inventory[key_dest]['cantidad'] += mov.cantidad
+                if allowed_sub_ids is not None and sub_dest_id not in allowed_sub_ids:
+                    pass
+                else:
+                    key_dest = (mov.material_id, sub_dest_id)
+                    if key_dest not in inventory:
+                        inventory[key_dest] = {'material': mov.material, 'sub_id': sub_dest_id, 'cantidad': 0}
+                    
+                    if mov.tipo == 'Traslado':
+                        inventory[key_dest]['cantidad'] += mov.cantidad
 
         # Map subbodega IDs to objects for easy access
         sub_map = {sb.id: sb for sb in subbodegas}
@@ -85,7 +116,7 @@ class BodegaViewSet(viewsets.ModelViewSet):
                     'cantidad': qty,
                     'unidad': mat.unidad,
                     'id_subbodega': sub_id,
-                    'subbodega_nombre': sub_obj.nombre if sub_obj else "General"
+                    'subbodega_nombre': sub_obj.get_full_path() if sub_obj else "General"
                 })
         
         return response.Response(resumen)
@@ -98,6 +129,13 @@ class SubbodegaViewSet(viewsets.ModelViewSet):
         bodega_id = self.request.query_params.get('bodega')
         if bodega_id:
             queryset = queryset.filter(bodega_id=bodega_id)
+        
+        parent_id = self.request.query_params.get('parent')
+        if parent_id:
+            if parent_id == 'null':
+                queryset = queryset.filter(parent__isnull=True)
+            else:
+                queryset = queryset.filter(parent_id=parent_id)
         
         if self.action == 'list':
             incluir_inactivas = self.request.query_params.get('incluir_inactivas', 'false').lower() == 'true'
@@ -234,7 +272,7 @@ class MovimientoViewSet(viewsets.ModelViewSet):
                     'id_bodega': bod.id,
                     'bodega': bod.nombre,
                     'id_subbodega': sub.id if sub else None,
-                    'subbodega': sub.nombre if sub else "General",
+                    'subbodega': sub.get_full_path() if sub else "General",
                     'cantidad': qty,
                     'unidad': mat.unidad,
                     'estado': self._get_estado(qty)
