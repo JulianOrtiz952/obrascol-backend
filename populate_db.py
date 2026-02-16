@@ -81,6 +81,11 @@ def populate():
         b = Bodega.objects.filter(nombre=nombre).first()
         if not b:
             b = Bodega.objects.create(nombre=nombre, ubicacion='Sede Principal')
+        else:
+            # Update location if it exists but is different/empty
+            if b.ubicacion != 'Sede Principal':
+                b.ubicacion = 'Sede Principal'
+                b.save()
         bodegas[nombre] = b
     print(f"Creadas {len(bodegas)} bodegas principales.")
 
@@ -151,10 +156,16 @@ def populate():
         catalogo.append(m)
     print(f"Creados {len(catalogo)} materiales en el catálogo.")
 
+    # Diagnostic: Current Counts
+    print(f"Estado actual: Movimientos={Movimiento.objects.count()}, Subbodegas={Subbodega.objects.count()}")
+
     # 7. Generar 300 Movimientos de Entrada
-    if Movimiento.objects.count() == 0:
-        print("Registrando 300 entradas de stock...")
-        for i in range(300):
+    # We'll check if we already have our specific test movements to avoid duplicates on every build
+    test_movs_count = Movimiento.objects.filter(observaciones__icontains="Carga inicial de datos de prueba").count()
+    
+    if test_movs_count < 300:
+        print(f"Registrando {300 - test_movs_count} entradas de stock faltantes...")
+        for i in range(test_movs_count, 300):
             mat = random.choice(catalogo)
             sub = random.choice(subbodegas_pool)
             user = random.choice(usuarios)
@@ -176,7 +187,7 @@ def populate():
             if (i+1) % 50 == 0:
                 print(f"  -> {i+1} movimientos registrados...")
     else:
-        print("Omitiendo creación de movimientos: Ya existen registros en la base de datos.")
+        print("Ya existen los 300 movimientos de prueba en la base de datos.")
 
     print("\n¡Poblamiento completado con éxito!")
     print(f"Total Bodegas: {Bodega.objects.count()}")
