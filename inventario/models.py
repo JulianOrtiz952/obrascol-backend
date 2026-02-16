@@ -32,7 +32,6 @@ class Material(models.Model):
     unidad = models.CharField(max_length=20) # pcs, m, L, etc.
     # New fields for V2
     marca = models.ForeignKey('Marca', on_delete=models.SET_NULL, null=True, blank=True, related_name='materiales')
-    ultimo_precio = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     
     def __str__(self):
         return f"{self.codigo} - {self.nombre}"
@@ -79,7 +78,6 @@ class Movimiento(models.Model):
     factura = models.ForeignKey(Factura, on_delete=models.SET_NULL, null=True, blank=True, related_name='movimientos')
     factura_manual = models.CharField(max_length=100, blank=True, null=True)
     cantidad = models.IntegerField()
-    precio = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='movimientos')
     fecha = models.DateTimeField(default=timezone.now)
     tipo = models.CharField(max_length=20, choices=TIPO_MOVIMIENTO)

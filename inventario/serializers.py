@@ -20,6 +20,12 @@ class SubbodegaSerializer(serializers.ModelSerializer):
         model = Subbodega
         fields = ['id', 'nombre', 'full_path', 'bodega', 'parent', 'activo']
 
+class SubbodegaSimpleSerializer(serializers.ModelSerializer):
+    """Lighter version without full_path for deeply nested lists"""
+    class Meta:
+        model = Subbodega
+        fields = ['id', 'nombre', 'bodega', 'parent', 'activo']
+
 class BodegaSimpleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Bodega
@@ -71,7 +77,7 @@ class MaterialSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Material
-        fields = ['id', 'codigo', 'codigo_barras', 'referencia', 'nombre', 'unidad', 'marca', 'ultimo_precio', 'marca_nombre']
+        fields = ['id', 'codigo', 'codigo_barras', 'referencia', 'nombre', 'unidad', 'marca', 'marca_nombre']
 
 class FacturaSerializer(serializers.ModelSerializer):
     class Meta:
@@ -81,11 +87,11 @@ class FacturaSerializer(serializers.ModelSerializer):
 class MovimientoSerializer(serializers.ModelSerializer):
     material_info = MaterialSerializer(source='material', read_only=True)
     bodega_info = BodegaSimpleSerializer(source='bodega', read_only=True)
-    subbodega_info = SubbodegaSerializer(source='subbodega', read_only=True)
+    subbodega_info = SubbodegaSimpleSerializer(source='subbodega', read_only=True)
     factura_info = FacturaSerializer(source='factura', read_only=True)
     marca_info = MarcaSerializer(source='marca', read_only=True)
     bodega_destino_info = BodegaSimpleSerializer(source='bodega_destino', read_only=True)
-    subbodega_destino_info = SubbodegaSerializer(source='subbodega_destino', read_only=True)
+    subbodega_destino_info = SubbodegaSimpleSerializer(source='subbodega_destino', read_only=True)
     usuario_info = UsuarioSerializer(source='usuario', read_only=True)
 
     class Meta:
@@ -95,7 +101,7 @@ class MovimientoSerializer(serializers.ModelSerializer):
             'subbodega', 'subbodega_info',
             'bodega_destino', 'bodega_destino_info',
             'subbodega_destino', 'subbodega_destino_info',
-            'factura', 'factura_info', 'factura_manual', 'cantidad', 'precio', 
+            'factura', 'factura_info', 'factura_manual', 'cantidad', 
             'fecha', 'tipo', 'observaciones', 'marca', 'marca_info',
             'usuario', 'usuario_info'
         ]
