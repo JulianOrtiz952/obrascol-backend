@@ -9,18 +9,23 @@ from .serializers import (
 )
 
 class BodegaViewSet(viewsets.ModelViewSet):
-    serializer_class = BodegaSerializer
+    queryset = Bodega.objects.all().order_by('nombre')
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return BodegaSimpleSerializer
+        return BodegaSerializer
 
     def get_queryset(self):
         # By default, only show active bodegas in the list view
-        queryset = Bodega.objects.all()
+        queryset = super().get_queryset()
         
         if self.action == 'list':
             incluir_inactivas = self.request.query_params.get('incluir_inactivas', 'false').lower() == 'true'
             if not incluir_inactivas:
                 queryset = queryset.filter(activo=True)
         
-        return queryset.order_by('nombre')
+        return queryset
 
     @action(detail=True, methods=['post'])
     def toggle_activo(self, request, pk=None):

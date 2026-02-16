@@ -20,42 +20,51 @@ class SubbodegaSerializer(serializers.ModelSerializer):
         model = Subbodega
         fields = ['id', 'nombre', 'full_path', 'bodega', 'parent', 'activo']
 
+class BodegaSimpleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Bodega
+        fields = ['id', 'nombre', 'ubicacion', 'activo']
+
 class BodegaSerializer(serializers.ModelSerializer):
     materiales_count = serializers.SerializerMethodField()
-    subbodegas = SubbodegaSerializer(many=True, read_only=True)
+    # Removing nested subbodegas from here as it's a performance killer in lists
+    # Front-end should fetch subbodegas separately or we only include them in detail view
     
     class Meta:
         model = Bodega
-        fields = ['id', 'nombre', 'ubicacion', 'activo', 'materiales_count', 'subbodegas']
+        fields = ['id', 'nombre', 'ubicacion', 'activo', 'materiales_count']
     
     def get_materiales_count(self, obj):
-        # Count unique materials with stock > 0 in this bodega
-        materiales = Material.objects.filter(
-            Q(movimientos__bodega=obj) | Q(movimientos__bodega_destino=obj)
-        ).distinct()
+        from django.db.models import Sum, Case, When, F, Value
         
-        count = 0
-        for mat in materiales:
-            # Entrada logic with transfers
-            movs = Movimiento.objects.filter(material=mat).filter(
-                Q(bodega=obj) | Q(bodega_destino=obj)
+        # Calculate stock per material using efficient aggregation (only 2 queries)
+        sources = Movimiento.objects.filter(bodega=obj).values('material').annotate(
+            stock=Sum(
+                Case(
+                    When(tipo__in=['Entrada', 'Edicion', 'Ajuste', 'Devolucion'], then=F('cantidad')),
+                    When(tipo__in=['Salida', 'Traslado'], then=-F('cantidad')),
+                    default=Value(0)
+                )
             )
-            total = 0
-            for mov in movs:
-                if mov.tipo in ['Entrada', 'Edicion', 'Ajuste', 'Devolucion']:
-                    if mov.bodega_id == obj.id:
-                        total += mov.cantidad
-                elif mov.tipo == 'Salida':
-                    if mov.bodega_id == obj.id:
-                        total -= mov.cantidad
-                elif mov.tipo == 'Traslado':
-                    if mov.bodega_id == obj.id:
-                        total -= mov.cantidad
-                    if mov.bodega_destino_id == obj.id:
-                        total += mov.cantidad
-            if total > 0:
-                count += 1
-        return count
+        )
+        
+        destinations = Movimiento.objects.filter(bodega_destino=obj).values('material').annotate(
+            stock=Sum(
+                Case(
+                    When(tipo='Traslado', then=F('cantidad')),
+                    default=Value(0)
+                )
+            )
+        )
+        
+        stock_map = {}
+        for s in sources:
+            stock_map[s['material']] = s['stock'] or 0
+        for d in destinations:
+            mat_id = d['material']
+            stock_map[mat_id] = stock_map.get(mat_id, 0) + (d['stock'] or 0)
+            
+        return sum(1 for qty in stock_map.values() if qty > 0)
 
 class MaterialSerializer(serializers.ModelSerializer):
     marca_nombre = serializers.ReadOnlyField(source='marca.nombre')
