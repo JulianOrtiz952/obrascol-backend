@@ -59,7 +59,8 @@ class BodegaViewSet(viewsets.ModelViewSet):
                 return response.Response({"error": "Subbodega no encontrada"}, status=404)
 
         # Get all subbodegas for this bodega (limited if filtered)
-        subbodegas_qs = bodega.subbodegas.all()
+        # We select_related parent up to a few levels to speed up get_full_path
+        subbodegas_qs = bodega.subbodegas.select_related('parent', 'parent__parent', 'parent__parent__parent', 'parent__parent__parent__parent')
         if allowed_sub_ids is not None:
              subbodegas_qs = subbodegas_qs.filter(id__in=allowed_sub_ids)
         
@@ -130,7 +131,7 @@ class SubbodegaViewSet(viewsets.ModelViewSet):
     serializer_class = SubbodegaSerializer
 
     def get_queryset(self):
-        queryset = Subbodega.objects.all()
+        queryset = Subbodega.objects.select_related('bodega', 'parent').all()
         bodega_id = self.request.query_params.get('bodega')
         if bodega_id:
             queryset = queryset.filter(bodega_id=bodega_id)
@@ -223,13 +224,19 @@ class ReportesViewSet(viewsets.ViewSet):
 
 
 class MovimientoViewSet(viewsets.ModelViewSet):
-    queryset = Movimiento.objects.all().order_by('-fecha')
+    queryset = Movimiento.objects.select_related(
+        'material', 'material__marca', 'bodega', 'subbodega', 'marca', 
+        'factura', 'bodega_destino', 'subbodega_destino', 'usuario'
+    ).all().order_by('-fecha')
     serializer_class = MovimientoSerializer
 
     @action(detail=False, methods=['get'])
     def resumen_inventario(self, request):
         # Calculate stock per material, bodega and subbodega
-        qs = Movimiento.objects.select_related('material', 'bodega', 'subbodega', 'bodega_destino', 'subbodega_destino').all()
+        qs = Movimiento.objects.select_related(
+            'material', 'material__marca', 'bodega', 'subbodega', 
+            'bodega_destino', 'subbodega_destino'
+        ).all()
         
         inventory = {}
         
