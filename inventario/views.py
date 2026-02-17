@@ -9,7 +9,7 @@ from .serializers import (
 )
 
 class BodegaViewSet(viewsets.ModelViewSet):
-    queryset = Bodega.objects.all().order_by('nombre')
+    queryset = Bodega.objects.prefetch_related('subbodegas').all().order_by('nombre')
 
     def get_serializer_class(self):
         if self.action == 'list':

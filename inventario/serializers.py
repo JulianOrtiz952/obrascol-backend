@@ -27,18 +27,19 @@ class SubbodegaSimpleSerializer(serializers.ModelSerializer):
         fields = ['id', 'nombre', 'bodega', 'parent', 'activo']
 
 class BodegaSimpleSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Bodega
-        fields = ['id', 'nombre', 'ubicacion', 'activo']
-
-class BodegaSerializer(serializers.ModelSerializer):
-    materiales_count = serializers.SerializerMethodField()
-    # Removing nested subbodegas from here as it's a performance killer in lists
-    # Front-end should fetch subbodegas separately or we only include them in detail view
+    subbodegas = SubbodegaSimpleSerializer(many=True, read_only=True)
     
     class Meta:
         model = Bodega
-        fields = ['id', 'nombre', 'ubicacion', 'activo', 'materiales_count']
+        fields = ['id', 'nombre', 'ubicacion', 'activo', 'subbodegas']
+
+class BodegaSerializer(serializers.ModelSerializer):
+    materiales_count = serializers.SerializerMethodField()
+    subbodegas = SubbodegaSimpleSerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = Bodega
+        fields = ['id', 'nombre', 'ubicacion', 'activo', 'materiales_count', 'subbodegas']
     
     def get_materiales_count(self, obj):
         from django.db.models import Sum, Case, When, F, Value
