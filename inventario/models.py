@@ -79,7 +79,7 @@ class Movimiento(models.Model):
     factura_manual = models.CharField(max_length=100, blank=True, null=True)
     cantidad = models.IntegerField()
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='movimientos')
-    fecha = models.DateTimeField(default=timezone.now)
+    fecha = models.DateTimeField(default=timezone.now, db_index=True)
     tipo = models.CharField(max_length=20, choices=TIPO_MOVIMIENTO)
     observaciones = models.TextField(blank=True, null=True)
 

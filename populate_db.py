@@ -150,8 +150,7 @@ def populate():
                 codigo=cod,
                 nombre=nom,
                 marca=Marca.objects.get(nombre=marc_nom),
-                unidad=uni_abrev,
-                ultimo_precio=random.randint(5000, 500000)
+                unidad=uni_abrev
             )
         catalogo.append(m)
     print(f"Creados {len(catalogo)} materiales en el catálogo.")
@@ -179,7 +178,6 @@ def populate():
                 subbodega=sub,
                 usuario=user,
                 cantidad=random.randint(1, 100),
-                precio=mat.ultimo_precio,
                 tipo='Entrada',
                 fecha=fecha,
                 observaciones=f"Carga inicial de datos de prueba #{i+1}"
