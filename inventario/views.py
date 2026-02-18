@@ -7,6 +7,8 @@ from .serializers import (
     MaterialSerializer, FacturaSerializer, MovimientoSerializer, 
     MarcaSerializer, UnidadMedidaSerializer
 )
+from .utils import export_all_data_to_excel
+from django.http import FileResponse
 
 class BodegaViewSet(viewsets.ModelViewSet):
     queryset = Bodega.objects.prefetch_related('subbodegas').all().order_by('nombre')
@@ -191,6 +193,16 @@ class ReportesViewSet(viewsets.ViewSet):
             'total_salidas': total_salidas,
             'total_marcas_activas': total_marcas,
         })
+
+    @action(detail=False, methods=['get'])
+    def exportar_excel(self, request):
+        excel_file = export_all_data_to_excel()
+        response = FileResponse(
+            excel_file, 
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename="backup_inventario.xlsx"'
+        return response
 
     @action(detail=False, methods=['get'])
     def top_marcas_entradas(self, request):
