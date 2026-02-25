@@ -7,7 +7,7 @@ from .serializers import (
     MaterialSerializer, FacturaSerializer, MovimientoSerializer, 
     MarcaSerializer, UnidadMedidaSerializer
 )
-from .utils import export_all_data_to_excel
+from .utils import export_all_data_to_excel, import_all_data_from_excel
 from django.http import FileResponse
 
 class BodegaViewSet(viewsets.ModelViewSet):
@@ -202,6 +202,28 @@ class ReportesViewSet(viewsets.ViewSet):
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
         response['Content-Disposition'] = 'attachment; filename="backup_inventario.xlsx"'
+        return response
+
+    @action(detail=False, methods=['post'])
+    def importar_excel(self, request):
+        excel_file = request.FILES.get('archivo')
+        if not excel_file:
+            return response.Response({"error": "No se proporcionó ningún archivo"}, status=400)
+        
+        try:
+            summary = import_all_data_from_excel(excel_file, user=request.user)
+            return response.Response(summary)
+        except Exception as e:
+            return response.Response({"error": str(e)}, status=500)
+
+    @action(detail=False, methods=['get'])
+    def descargar_plantilla(self, request):
+        excel_file = export_all_data_to_excel(template=True)
+        response = FileResponse(
+            excel_file, 
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename="plantilla_inventario.xlsx"'
         return response
 
     @action(detail=False, methods=['get'])

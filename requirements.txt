@@ -6,4 +6,5 @@ uvicorn
 whitenoise
 dj-database-url
 psycopg2-binary
-djangorestframework-simplejwtopenpyxl==3.1.5
+djangorestframework-simplejwt
+openpyxl==3.1.5
