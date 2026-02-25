@@ -28,9 +28,19 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-qg*7^l6348)-a#6)((xk8
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+env_allowed_hosts = os.environ.get('ALLOWED_HOSTS')
+if env_allowed_hosts:
+    ALLOWED_HOSTS.extend(env_allowed_hosts.split(','))
+
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
 if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+
+CSRF_TRUSTED_ORIGINS = []
+env_csrf_trusted = os.environ.get('CSRF_TRUSTED_ORIGINS')
+if env_csrf_trusted:
+    CSRF_TRUSTED_ORIGINS.extend(env_csrf_trusted.split(','))
+elif RENDER_EXTERNAL_HOSTNAME:
     CSRF_TRUSTED_ORIGINS = [f'https://{RENDER_EXTERNAL_HOSTNAME}']
 
 
