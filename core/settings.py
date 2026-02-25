@@ -27,7 +27,9 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-qg*7^l6348)-a#6)((xk8
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+ALLOWED_HOSTS = ALLOWED_HOSTS = [
+    "api-obrascol.volcanzte.lat"
+]
 env_allowed_hosts = os.environ.get('ALLOWED_HOSTS')
 if env_allowed_hosts:
     ALLOWED_HOSTS.extend(env_allowed_hosts.split(','))
