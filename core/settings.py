@@ -152,6 +152,14 @@ if not DEBUG:
 
 CORS_ALLOW_ALL_ORIGINS = True # Change to specific origins for production
 
+CORS_ALLOWED_ORIGINS = [
+    "https://obrascol.volcanzte.lat"
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://obrascol.volcanzte.lat"
+]
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
