@@ -7,5 +7,3 @@ pip install -r requirements.txt
 mkdir -p staticfiles
 
 python3 manage.py collectstatic --no-input
-python3 manage.py migrate
-python3 manage.py populate_polvorin
