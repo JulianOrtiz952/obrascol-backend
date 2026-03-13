@@ -12,7 +12,19 @@ def run():
     from django.contrib.auth import get_user_model
     
     User = get_user_model()
-    user = User.objects.filter(is_superuser=True).first() or User.objects.first()
+    
+    # Check and create default superuser
+    if not User.objects.filter(is_superuser=True).exists():
+        print("INFO: No hay súper usuarios. Creando usuario por defecto 'volcan'.")
+        user = User.objects.create_superuser(
+            username='volcan', 
+            email='admin@obrascol.com', 
+            password='volcanpassword123',
+            rol='superusuario'
+        )
+        print("SUCCESS: Usuario 'volcan' creado con contraseña 'volcanpassword123'.")
+    else:
+        user = User.objects.filter(is_superuser=True).first()
 
     materials = list(Material.objects.all())
     if not materials:
